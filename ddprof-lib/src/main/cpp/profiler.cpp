@@ -1494,6 +1494,7 @@ Error Profiler::init() {
 
 Error Profiler::start(Arguments &args, bool reset) {
   MutexLocker ml(_state_lock);
+  _task_block_enabled.store(false, std::memory_order_release);
   Error error = checkState();
   if (error) {
     return error;
@@ -2035,7 +2036,9 @@ Error Profiler::dump(const char *path, const int length) {
     // rotateDictsAndRun rotates the dictionaries, takes lockAll() around the
     // dump (fences ASGCT/JNI writers to CallTraceStorage), then clearStandby()s
     // the rotated buffers.  StringDictionary's RefCountGuard protocol handles
-    // its own writer/reader coordination.
+    // its own writer/reader coordination; #527's classMapSharedGuard readers
+    // (deferred vtable receiver resolution) are coordinated through
+    // _class_map_lock.
     beginTaskBlockRotation();
     rotateDictsAndRun([&]{
       err = _jfr.dump(path, length);

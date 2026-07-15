@@ -330,6 +330,7 @@ public:
                                    BlockRunSnapshot* snapshot);
     bool activeOwnedBlockGeneration(const ThreadEntry& entry,
                                     u64& generation) const;
+    BlockRunSnapshot snapshotBlockedRun(SlotID slot_id) const;
     bool isOwnedBlockSuppressionCandidate(const ThreadEntry& entry) const;
 
 #ifdef UNIT_TEST

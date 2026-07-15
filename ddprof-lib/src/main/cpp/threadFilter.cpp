@@ -696,6 +696,11 @@ bool ThreadFilter::activeOwnedBlockGeneration(const ThreadEntry& entry,
     return ownedBlockGeneration(entry, generation, false);
 }
 
+BlockRunSnapshot ThreadFilter::snapshotBlockedRun(SlotID slot_id) const {
+    Slot* s = slotForId(slot_id);
+    return s == nullptr ? BlockRunSnapshot{} : s->snapshotBlockRun();
+}
+
 bool ThreadFilter::isOwnedBlockSuppressionCandidate(
     const ThreadEntry& entry) const {
     u64 generation = 0;
