@@ -69,7 +69,8 @@ public:
 };
 
 extern "C" DLLEXPORT jboolean JNICALL
-Java_com_datadoghq_profiler_JavaProfiler_init0(JNIEnv *env, jclass unused) {
+Java_com_datadoghq_profiler_JavaProfiler_init0(
+    JNIEnv *env, jclass unused, jboolean delegateMonitorWaitEvents) {
   Error error = Profiler::instance()->init();
   if (error) {
     throwNew(env, "java/lang/IllegalStateException", error.message());
@@ -77,7 +78,7 @@ Java_com_datadoghq_profiler_JavaProfiler_init0(JNIEnv *env, jclass unused) {
   }
 
   // JavaVM* has already been stored when the native library was loaded so we can pass nullptr here
-  return VM::initProfilerBridge(nullptr, true);
+  return VM::initProfilerBridge(nullptr, true, delegateMonitorWaitEvents);
 }
 
 extern "C" DLLEXPORT void JNICALL
@@ -92,6 +93,12 @@ Java_com_datadoghq_profiler_JavaProfiler_stop0(JNIEnv *env, jobject unused) {
 extern "C" DLLEXPORT jint JNICALL
 Java_com_datadoghq_profiler_JavaProfiler_getTid0(JNIEnv *env, jclass unused) {
   return OS::threadId();
+}
+
+extern "C" DLLEXPORT jboolean JNICALL
+Java_com_datadoghq_profiler_JavaProfiler_monitorEventsDelegated0(
+    JNIEnv *env, jclass unused) {
+  return VM::monitorEventsDelegated();
 }
 
 extern "C" DLLEXPORT jstring JNICALL
@@ -359,44 +366,55 @@ Java_com_datadoghq_profiler_JavaProfiler_recordQueueEnd0(
   Profiler::instance()->recordQueueTime(tid, &event);
 }
 
-extern "C" DLLEXPORT jboolean JNICALL
-Java_com_datadoghq_profiler_JavaProfiler_parkEnter0(JNIEnv *env, jclass unused) {
+extern "C" DLLEXPORT void JNICALL
+Java_com_datadoghq_profiler_JavaProfiler_parkEnter0(
+    JNIEnv *env, jclass unused, jthread thread) {
+  if (!JVMSupport::isPlatformThread(env, thread)) {
+    return;
+  }
   ProfiledThread *current = ProfiledThread::initCurrentThreadSignalSafe();
   if (current == nullptr) {
-    return JNI_FALSE;
+    return;
   }
-  bool first_park = current->parkEnter();
-  ThreadFilter *tf = Profiler::instance()->threadFilter();
-  if (first_park && tf->registryActive()) {
+  Context context = ContextApi::snapshot();
+  if (!current->parkEnter(TSC::ticks(), context)) {
+    return;
+  }
+
+  Profiler *profiler = Profiler::instance();
+  ThreadFilter *tf = profiler->threadFilter();
+  if (context.spanId == 0 && tf->registryActive() &&
+      (profiler->taskBlockEnabled() || tf->enabled())) {
     ThreadFilter::SlotID slot_id = ensureCurrentThreadFilterSlot(tf, current);
     if (slot_id >= 0) {
-      current->setParkBlockToken(
-          tf->enterBlockedRun(slot_id, OSThreadState::CONDVAR_WAIT));
+      current->setParkBlockToken(tf->enterBlockedRun(
+          slot_id, OSThreadState::CONDVAR_WAIT, BlockRunOwner::JAVA));
     }
   }
-  return first_park ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" DLLEXPORT void JNICALL
 Java_com_datadoghq_profiler_JavaProfiler_parkExit0(
-    JNIEnv *env, jclass unused, jlong blocker, jlong unblockingSpanId) {
+    JNIEnv *env, jclass unused, jthread thread, jlong blocker,
+    jlong unblockingSpanId) {
+  if (!JVMSupport::isPlatformThread(env, thread)) {
+    return;
+  }
   ProfiledThread *current = ProfiledThread::initCurrentThreadSignalSafe();
   if (current == nullptr) {
     return;
   }
-
+  u64 start_ticks = 0;
   u64 park_block_token = 0;
-  if (!current->parkExit(park_block_token) || park_block_token == 0) {
+  Context context{};
+  if (!current->parkExit(start_ticks, context, park_block_token) ||
+      park_block_token == 0) {
     return;
   }
-  ThreadFilter *tf = Profiler::instance()->threadFilter();
-  if (tf->registryActive()) {
-    ThreadFilter::SlotID slot_id = ThreadFilter::tokenSlotId(park_block_token);
-    if (tf->activeSlotForId(current->filterSlotId(), current->tid()) != nullptr &&
-        current->filterSlotId() == slot_id) {
-      tf->exitBlockedRun(slot_id, ThreadFilter::tokenGeneration(park_block_token));
-    }
-  }
+  finishTaskBlockAtExit(current, Profiler::instance()->threadFilter(), thread,
+                        1, park_block_token, start_ticks, context,
+                        static_cast<u64>(blocker),
+                        static_cast<u64>(unblockingSpanId));
 }
 
 static bool decodeJavaBlockState(jint state, OSThreadState &decoded) {
@@ -410,9 +428,10 @@ static bool decodeJavaBlockState(jint state, OSThreadState &decoded) {
 
 extern "C" DLLEXPORT jlong JNICALL
 Java_com_datadoghq_profiler_JavaProfiler_blockEnter0(
-    JNIEnv *env, jclass unused, jint state) {
+    JNIEnv *env, jclass unused, jthread thread, jint state) {
   OSThreadState decoded;
-  if (!decodeJavaBlockState(state, decoded)) {
+  if (!decodeJavaBlockState(state, decoded) ||
+      !JVMSupport::isPlatformThread(env, thread)) {
     return 0;
   }
   ProfiledThread *current = ProfiledThread::initCurrentThreadSignalSafe();
@@ -434,9 +453,9 @@ Java_com_datadoghq_profiler_JavaProfiler_blockEnter0(
 
 extern "C" DLLEXPORT void JNICALL
 Java_com_datadoghq_profiler_JavaProfiler_blockExit0(
-    JNIEnv *env, jclass unused, jlong token) {
+    JNIEnv *env, jclass unused, jthread thread, jlong token) {
   u64 block_token = static_cast<u64>(token);
-  if (block_token == 0) {
+  if (block_token == 0 || !JVMSupport::isPlatformThread(env, thread)) {
     return;
   }
   ProfiledThread *current = ProfiledThread::initCurrentThreadSignalSafe();
