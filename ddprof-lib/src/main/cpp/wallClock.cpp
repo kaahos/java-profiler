@@ -55,8 +55,6 @@ static inline bool hasKnownActiveTraceContext(ProfiledThread* thread) {
 
 struct WallPrecheckResult {
   bool suppress = false;
-  ThreadFilter::Slot* slot_to_arm = nullptr;
-  OSThreadState state_to_arm = OSThreadState::UNKNOWN;
   OSThreadState observed_state = OSThreadState::UNKNOWN;
   bool observed_state_valid = false;
   ThreadFilter::Slot* unowned_weight_slot = nullptr;
@@ -67,18 +65,17 @@ struct WallPrecheckResult {
   OSThreadState flush_state = OSThreadState::UNKNOWN;
 };
 
-static inline void incrementSuppressedSampledRun() {
-  Counters::increment(WC_SIGNAL_SUPPRESSED_SAMPLED_RUN);
-  WallClockCounters::incrementSuppressedSampledRun();
+static inline void incrementSuppressedOwnedBlock() {
+  Counters::increment(WC_SIGNAL_SUPPRESSED_OWNED_BLOCK);
+  WallClockCounters::incrementSuppressedOwnedBlock();
 }
 
 static inline bool suppressAlreadySampledBlock(const ThreadEntry& entry) {
-  ThreadFilter* thread_filter = Profiler::instance()->threadFilter();
-  if (!thread_filter->shouldSuppressOwnedBlock(entry)) {
-    return false;
+  if (Profiler::instance()->threadFilter()->isOwnedBlockSuppressionCandidate(entry)) {
+    incrementSuppressedOwnedBlock();
+    return true;
   }
-  incrementSuppressedSampledRun();
-  return true;
+  return false;
 }
 
 static inline WallPrecheckResult prepareWallPrecheck(ProfiledThread* current,
@@ -111,31 +108,17 @@ static inline WallPrecheckResult prepareWallPrecheck(ProfiledThread* current,
   }
 
   // In an unfiltered recording, context threads keep their normal MethodSample
-  // stream. Only owned blocks that remain outside the context window may replace
-  // repeated signals.
+  // stream. TaskBlock replaces signals only for owned blocks that remain
+  // outside the context window.
   if (registry->unfilteredWallTrackingActive() && slot->inContextWindow()) {
     return result;
   }
 
-  OSThreadState active_block_state = slot->activeBlockState();
-  BlockRunOwner active_block_owner = slot->activeBlockOwner();
-  bool has_owned_block =
-      active_block_owner != BlockRunOwner::NONE &&
-      isPrecheckSuppressionState(active_block_state) &&
-      (!registry->unfilteredWallTrackingActive() ||
-       slot->activeBlockRemainedOutsideContextWindow());
-  if (has_owned_block) {
-    if (slot->sampledThisRun() &&
-        active_block_state == slot->lastSampledState()) {
-      incrementSuppressedSampledRun();
-      result.suppress = true;
-      return result;
-    }
-    // Arm only after the MethodSample has been successfully recorded. If the
-    // JFR write is skipped due to lock contention, the next signal must retry
-    // instead of losing the only stack for this blocked run.
-    result.slot_to_arm = slot;
-    result.state_to_arm = active_block_state;
+  ThreadEntry entry{current->tid(), slot, slot->lifecycleGeneration(),
+                    slot->recordingEpoch()};
+  if (registry->isOwnedBlockSuppressionCandidate(entry)) {
+    incrementSuppressedOwnedBlock();
+    result.suppress = true;
     return result;
   }
 
@@ -175,9 +158,6 @@ static inline void finishWallPrecheck(const WallPrecheckResult& precheck,
       precheck.unowned_weight_slot->recordUnownedBlockedSample(
           recorded_call_trace_id, precheck.observed_state);
     }
-  }
-  if (recorded && precheck.slot_to_arm != nullptr) {
-    precheck.slot_to_arm->markSampledThisRun(precheck.state_to_arm);
   }
 }
 
@@ -552,6 +532,20 @@ void WallClockJvmti::signalHandler(int signo, siginfo_t *siginfo,
         nullptr, last_sample, tid, BCI_WALL, &event);
     finishWallPrecheck(precheck, recorded);
   }
+
+  event._thread_state = state;
+  event._execution_mode = mode;
+  event._weight = precheck.unowned_weight;
+  // Pass nullptr ucontext so the JVM uses safepoint-based stack walking.
+  // Passing the signal-frame PC causes the extension to reject samples where
+  // the thread is currently inside JVM-internal (non-Java) code.
+  // JVMTI-delegated samples carry no call_trace_id, so unowned tail flushing
+  // remains limited to the ASGCT wall engine.
+  bool recorded = Profiler::instance()->recordSampleDelegated(
+      nullptr, last_sample, tid, BCI_WALL, &event);
+  finishWallPrecheck(precheck, recorded);
+  Shims::instance().setSighandlerTid(-1);
+  errno = saved_errno;
 }
 
 void WallClockJvmti::initialize(Arguments &args) {
