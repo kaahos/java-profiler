@@ -40,6 +40,7 @@ public class WallclockMitigationsCombinedTest extends AbstractProfilerTest {
         Thread sleeping =
                 new Thread(
                         () -> {
+                            registerCurrentThreadForWallClockProfiling();
                             ready.countDown();
                             long token = ProfilerOwnedBlockHooks.blockEnter(
                                     profiler, OSTHREAD_STATE_SLEEPING);
@@ -55,6 +56,7 @@ public class WallclockMitigationsCombinedTest extends AbstractProfilerTest {
         Thread parkedBusy =
                 new Thread(
                         () -> {
+                            registerCurrentThreadForWallClockProfiling();
                             long spanId = 0x1111L;
                             long rootSpanId = 0x2222L;
                             profiler.setTraceContext(rootSpanId, spanId, 0, 0, -1, null, -1, null);
@@ -73,6 +75,7 @@ public class WallclockMitigationsCombinedTest extends AbstractProfilerTest {
         Thread runnable =
                 new Thread(
                         () -> {
+                            registerCurrentThreadForWallClockProfiling();
                             ready.countDown();
                             while (!stop.get()) {
                                 // keep runnable
@@ -118,7 +121,7 @@ public class WallclockMitigationsCombinedTest extends AbstractProfilerTest {
 
     @Override
     protected String getProfilerCommand() {
-        return "wall=1ms,wallprecheck=true";
+        return "wall=1ms,filter=0,wallprecheck=true";
     }
 
     private Map<String, Long> samplesByThreadName() {
