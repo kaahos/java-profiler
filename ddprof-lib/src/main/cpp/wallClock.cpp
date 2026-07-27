@@ -132,6 +132,14 @@ static inline WallPrecheckResult prepareWallPrecheck(ProfiledThread* current,
     result.owned_block_generation = block_generation;
     return result;
   }
+  u64 block_generation = 0;
+  if (registry->activeOwnedBlockGeneration(entry, block_generation)) {
+    // Arm only after recordSample succeeds. A skipped JFR write must leave the
+    // run eligible so the next signal retries instead of losing its only stack.
+    result.owned_block_slot = slot;
+    result.owned_block_generation = block_generation;
+    return result;
+  }
   if (!slot->unownedBlockedFallbackEnabled()) {
     return result;
   }
