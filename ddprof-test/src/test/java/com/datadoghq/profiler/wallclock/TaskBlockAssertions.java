@@ -115,6 +115,25 @@ final class TaskBlockAssertions {
     return false;
   }
 
+  static boolean containsEventThread(JfrEvents events, String threadName) {
+    for (JfrEvent item : events) {
+      if (threadName.equals(item.getThreadName(EVENT_THREAD))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static int countEventsForThread(JfrEvents events, String threadName) {
+    int count = 0;
+    for (JfrEvent item : events) {
+      if (threadName.equals(item.getThreadName(EVENT_THREAD))) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   static boolean containsSpan(JfrEvents events, long spanId) {
     for (JfrEvent item : events) {
       if (item.getLong(AbstractProfilerTest.SPAN_ID, Long.MIN_VALUE) == spanId) {
