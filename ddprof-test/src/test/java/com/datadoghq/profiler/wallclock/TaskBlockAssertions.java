@@ -26,6 +26,7 @@ final class TaskBlockAssertions {
   private static final String OBSERVED_BLOCKING_STATE = "observedBlockingState";
   private static final String CORRELATION_ID = "correlationId";
   private static final String EVENT_THREAD = "eventThread";
+  private static final String DURATION = "duration";
 
   private TaskBlockAssertions() {}
 
@@ -93,7 +94,8 @@ final class TaskBlockAssertions {
 
   static void assertNoCorrelationId(JfrEvents events) {
     for (JfrEvent item : events) {
-      assertNull(item.get(CORRELATION_ID));
+      assertTrue(item.getLong(CORRELATION_ID, Long.MIN_VALUE) == 0,
+          "Direct-stack TaskBlock must have correlationId=0");
     }
   }
 
@@ -134,6 +136,16 @@ final class TaskBlockAssertions {
     return count;
   }
 
+  static double durationNanosForThread(JfrEvents events, String threadName) {
+    double durationNanos = 0;
+    for (JfrEvent item : events) {
+      if (threadName.equals(item.getThreadName(EVENT_THREAD))) {
+        durationNanos += item.getLong(DURATION, 0L);
+      }
+    }
+    return durationNanos;
+  }
+
   static boolean containsSpan(JfrEvents events, long spanId) {
     for (JfrEvent item : events) {
       if (item.getLong(AbstractProfilerTest.SPAN_ID, Long.MIN_VALUE) == spanId) {
@@ -155,7 +167,5 @@ final class TaskBlockAssertions {
       checked++;
     }
     assertTrue(checked > 0, "Expected TaskBlock eventThread for blocker=" + blocker);
-  }
-    }
   }
 }
