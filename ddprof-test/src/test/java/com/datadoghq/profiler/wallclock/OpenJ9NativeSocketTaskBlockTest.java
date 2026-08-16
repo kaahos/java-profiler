@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.datadoghq.profiler.AbstractProfilerTest;
+import com.datadoghq.profiler.JfrEvents;
 import com.datadoghq.profiler.Platform;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -20,7 +21,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
-import org.openjdk.jmc.common.item.IItemCollection;
 
 /** Verifies that OpenJ9's ASGCT wall engine supports native socket TaskBlock production. */
 public class OpenJ9NativeSocketTaskBlockTest extends AbstractProfilerTest {
@@ -54,7 +54,7 @@ public class OpenJ9NativeSocketTaskBlockTest extends AbstractProfilerTest {
         "OpenJ9 TaskBlock recording failed");
 
     stopProfiler();
-    IItemCollection taskBlocks = verifyEvents("datadog.TaskBlock", false);
+    JfrEvents taskBlocks = verifyEvents("datadog.TaskBlock", false);
     assertTrue(
         TaskBlockAssertions.containsObservedStateForEventThread(
             taskBlocks, "IO_WAIT", workerName),

@@ -6,9 +6,9 @@
 package com.datadoghq.profiler.wallclock;
 
 import com.datadoghq.profiler.AbstractProfilerTest;
+import com.datadoghq.profiler.JfrEvents;
 import com.datadoghq.profiler.Platform;
 import org.junit.jupiter.api.Test;
-import org.openjdk.jmc.common.item.IItemCollection;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -168,7 +168,7 @@ public class NativeSocketTaskBlockTest extends AbstractProfilerTest {
                 "Expected wall signals to be suppressed during the native selector wait");
 
         stopProfiler();
-        IItemCollection taskBlocks = verifyEvents("datadog.TaskBlock", false);
+        JfrEvents taskBlocks = verifyEvents("datadog.TaskBlock", false);
         assertIoWaitTaskBlockSelfContained(taskBlocks, workerName);
         int workerEvents = TaskBlockAssertions.countEventsForThread(taskBlocks, workerName);
         assertTrue(workerEvents >= 1 && workerEvents <= 2,
@@ -253,11 +253,11 @@ public class NativeSocketTaskBlockTest extends AbstractProfilerTest {
                         .getOrDefault("task_block_skipped_trace_context", 0L) > skippedBefore,
                 "Native socket hook did not reject the traced blocking read");
         stopProfiler();
-        IItemCollection taskBlocks = verifyEvents("datadog.TaskBlock", false);
+        JfrEvents taskBlocks = verifyEvents("datadog.TaskBlock", false);
         assertFalse(
                 TaskBlockAssertions.containsEventThread(taskBlocks, workerName),
                 "Traced socket I/O must not emit a TaskBlock for the worker");
-        IItemCollection methodSamples = verifyEvents("datadog.MethodSample", false);
+        JfrEvents methodSamples = verifyEvents("datadog.MethodSample", false);
         assertTrue(TaskBlockAssertions.containsEventThread(methodSamples, workerName),
                 "Traced socket I/O must retain MethodSample wall-clock data for the worker");
         assertTrue(TaskBlockAssertions.containsSpan(methodSamples, 0x5101L),
@@ -293,7 +293,7 @@ public class NativeSocketTaskBlockTest extends AbstractProfilerTest {
     }
 
     private void assertIoWaitTaskBlockSelfContained(
-            IItemCollection taskBlockEvents, String workerName) {
+            JfrEvents taskBlockEvents, String workerName) {
         assertNativeTaskBlockPresent(taskBlockEvents);
         TaskBlockAssertions.assertNoAnchorFields(taskBlockEvents);
         assertTaskBlockStackReference(taskBlockEvents);
@@ -303,13 +303,13 @@ public class NativeSocketTaskBlockTest extends AbstractProfilerTest {
                 "Expected native IO_WAIT TaskBlock for " + workerName);
     }
 
-    protected void assertTaskBlockStackReference(IItemCollection taskBlockEvents) {
+    protected void assertTaskBlockStackReference(JfrEvents taskBlockEvents) {
         TaskBlockAssertions.assertContainsStackTrace(taskBlockEvents);
         TaskBlockAssertions.assertContainsJavaType(taskBlockEvents, "NativeSocketTaskBlockTest");
         TaskBlockAssertions.assertNoCorrelationId(taskBlockEvents);
     }
 
-    private void assertNativeTaskBlockPresent(IItemCollection taskBlockEvents) {
+    private void assertNativeTaskBlockPresent(JfrEvents taskBlockEvents) {
         if (!taskBlockEvents.hasItems()) {
             String diagnostic = missingTaskBlockDiagnostic();
             System.out.println(diagnostic);

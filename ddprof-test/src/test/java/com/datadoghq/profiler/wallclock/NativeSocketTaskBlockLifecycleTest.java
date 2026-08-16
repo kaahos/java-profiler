@@ -6,10 +6,10 @@
 package com.datadoghq.profiler.wallclock;
 
 import com.datadoghq.profiler.AbstractProfilerTest;
+import com.datadoghq.profiler.JfrEvents;
 import com.datadoghq.profiler.Platform;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.openjdk.jmc.common.item.IItemCollection;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -67,7 +67,7 @@ public class NativeSocketTaskBlockLifecycleTest extends AbstractProfilerTest {
             profiler.stop();
             disabledRunning = false;
 
-            IItemCollection disabledTaskBlocks =
+            JfrEvents disabledTaskBlocks =
                     verifyEvents(disabledRecording, "datadog.TaskBlock", false);
             assertFalse(TaskBlockAssertions.containsEventThread(
                             disabledTaskBlocks, disabledWorkerName),
@@ -168,7 +168,7 @@ public class NativeSocketTaskBlockLifecycleTest extends AbstractProfilerTest {
             profiler.stop();
             restarted = false;
 
-            IItemCollection restartedTaskBlocks =
+            JfrEvents restartedTaskBlocks =
                     verifyEvents(restartedRecording, "datadog.TaskBlock", false);
             TaskBlockAssertions.assertNoAnchorFields(restartedTaskBlocks);
             TaskBlockAssertions.assertContainsStackTrace(restartedTaskBlocks);
@@ -196,7 +196,7 @@ public class NativeSocketTaskBlockLifecycleTest extends AbstractProfilerTest {
     }
 
     private void assertIoWaitTaskBlockPresent(
-            IItemCollection taskBlockEvents, String workerName) {
+            JfrEvents taskBlockEvents, String workerName) {
         if (!taskBlockEvents.hasItems()) {
             fail(missingTaskBlockDiagnostic());
         }

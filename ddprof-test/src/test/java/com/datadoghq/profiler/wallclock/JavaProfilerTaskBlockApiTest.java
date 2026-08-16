@@ -191,7 +191,7 @@ public class JavaProfilerTaskBlockApiTest extends AbstractProfilerTest {
     Path snapshot = Files.createTempFile("taskblock-live-dump-", ".jfr");
     try {
       dump(snapshot);
-      IItemCollection prefix = verifyEvents(snapshot, "datadog.TaskBlock", true);
+      JfrEvents prefix = verifyEvents(snapshot, "datadog.TaskBlock", true);
       assertEquals(1, TaskBlockAssertions.countEventsForThread(prefix, workerName));
       TaskBlockAssertions.assertContainsStackTrace(prefix);
       TaskBlockAssertions.assertNoCorrelationId(prefix);
@@ -204,7 +204,7 @@ public class JavaProfilerTaskBlockApiTest extends AbstractProfilerTest {
       assertTrue(recorded.get());
 
       stopProfiler();
-      IItemCollection suffix = verifyEvents("datadog.TaskBlock");
+      JfrEvents suffix = verifyEvents("datadog.TaskBlock");
       assertEquals(1, TaskBlockAssertions.countEventsForThread(suffix, workerName));
       TaskBlockAssertions.assertContainsStackTrace(suffix);
       TaskBlockAssertions.assertNoCorrelationId(suffix);

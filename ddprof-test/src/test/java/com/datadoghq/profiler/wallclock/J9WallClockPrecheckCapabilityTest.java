@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.datadoghq.profiler.AbstractProfilerTest;
+import com.datadoghq.profiler.JfrEvents;
 import com.datadoghq.profiler.Platform;
 import com.datadoghq.profiler.ProfilerOwnedBlockHooks;
 import java.io.InputStream;
@@ -21,7 +22,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
-import org.openjdk.jmc.common.item.IItemCollection;
 
 /** Verifies that unsupported J9 wall sampling does not activate unfiltered precheck tracking. */
 public class J9WallClockPrecheckCapabilityTest extends AbstractProfilerTest {
@@ -55,11 +55,11 @@ public class J9WallClockPrecheckCapabilityTest extends AbstractProfilerTest {
         "J9WallClock must not suppress wall signals");
 
     stopProfiler();
-    IItemCollection taskBlocks = verifyEvents("datadog.TaskBlock", false);
+    JfrEvents taskBlocks = verifyEvents("datadog.TaskBlock", false);
     assertFalse(
         TaskBlockAssertions.containsEventThread(taskBlocks, workerName),
         "J9WallClock fallback must not emit a TaskBlock for the worker");
-    IItemCollection methodSamples = verifyEvents("datadog.MethodSample", false);
+    JfrEvents methodSamples = verifyEvents("datadog.MethodSample", false);
     assertTrue(
         TaskBlockAssertions.containsEventThread(methodSamples, workerName),
         "J9WallClock fallback must retain wall-clock MethodSample coverage for the worker");
